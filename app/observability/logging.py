@@ -45,6 +45,12 @@ def redact(value: Any) -> Any:
     return value
 
 
+def redact_field(key: str, value: Any) -> Any:
+    """A sensitive name passed as a top-level `extra=` key needs the same treatment as a
+    nested one -- redact() alone only sees the value."""
+    return _REDACTED if key.lower() in _SENSITIVE_KEYS else redact(value)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -54,7 +60,7 @@ class JsonFormatter(logging.Formatter):
             "event": record.getMessage(),
         }
         for key, value in ((k, v) for k, v in record.__dict__.items() if k not in _RESERVED):
-            payload[key] = redact(value)
+            payload[key] = redact_field(key, value)
         for ctx_key, ctx_var in (
             ("correlation_id", _correlation_id),
             ("run_uuid", _run_uuid),
@@ -77,7 +83,7 @@ class ConsoleFormatter(logging.Formatter):
             if k not in _RESERVED and k != "correlation_id"
         }
         cid = _correlation_id.get() or "-"
-        tail = " ".join(f"{k}={redact(v)}" for k, v in extras.items())
+        tail = " ".join(f"{k}={redact_field(k, v)}" for k, v in extras.items())
         return f"{self.formatTime(record, '%H:%M:%S')} {record.levelname:<7} [{cid[:8]}] {record.getMessage()} {tail}".rstrip()
 
 

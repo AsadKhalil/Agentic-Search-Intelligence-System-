@@ -14,14 +14,10 @@ class Settings(BaseSettings):
     dataforseo_login: str = ""
     dataforseo_password: str = ""
     dataforseo_base_url: str = "https://api.dataforseo.com"
-
-    # Probability that the mock transport injects a transient 5xx, so the
-    # retry/fallback paths can be exercised without touching the network.
-    mock_failure_rate: float = 0.0
     mock_latency_ms: int = 0
 
     # --- LLM --------------------------------------------------------------
-    # Empty api key => deterministic FakeLLM, so the graph runs offline.
+    # Empty api key => deterministic ScriptedToolCallingLLM, so the graph runs offline.
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
@@ -29,14 +25,13 @@ class Settings(BaseSettings):
 
     # --- Resilience -------------------------------------------------------
     http_timeout_seconds: float = 20.0
+    # The ChatGPT live endpoint is documented at up to 120s; the 20s global
+    # would guarantee a spurious timeout on every call.
+    chatgpt_timeout_seconds: float = 130.0
     retry_max_attempts: int = 4
     retry_base_delay_seconds: float = 0.5
     retry_max_delay_seconds: float = 8.0
     retry_jitter: bool = True
-
-    circuit_breaker_enabled: bool = True
-    circuit_breaker_failure_threshold: int = 5
-    circuit_breaker_reset_seconds: float = 30.0
 
     # --- App --------------------------------------------------------------
     database_url: str = "sqlite:///./agentic_search.db"
