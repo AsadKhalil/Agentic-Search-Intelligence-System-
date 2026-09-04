@@ -466,5 +466,11 @@ tests/    conftest.py + 6 test modules
 demo.py  Makefile  .env.example  requirements.txt  PLAN.md
 ```
 
-[`PLAN.md`](PLAN.md) is the design document this was built from, kept for the reasoning
-behind the decisions above.
+## Further reading
+
+- **[DIAGRAMS.md](DIAGRAMS.md)** — architecture, the DAG with every routing predicate,
+  sequence diagrams for the healthy / retry / LLM-failure / recheck flows, the ER model and
+  its join contract, and class diagrams for the runtime collaborators and the data types.
+  Written in two tiers: a plain-language overview, then the engineering detail.
+- **[PLAN.md](PLAN.md)** — the design document this was built from, kept for the reasoning
+  behind the decisions above.
