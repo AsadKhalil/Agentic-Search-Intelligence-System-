@@ -1,0 +1,31 @@
+{
+  "version": "0.1.20241227",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "0.1913 sec.",
+  "cost": 0.0101,
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "01011234-0000-0399-0000-fixture0000kw",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.1402 sec.",
+      "cost": 0.0101,
+      "result_count": 1,
+      "path": ["v3", "dataforseo_labs", "google", "keyword_overview", "live"],
+      "data": {"api": "dataforseo_labs", "function": "keyword_overview", "se_type": "google"},
+      "result": [
+        {
+          "se_type": "google",
+          "location_code": 2840,
+          "language_code": "en",
+          "total_count": 0,
+          "items_count": 0,
+          "items": []
+        }
+      ]
+    }
+  ]
+}

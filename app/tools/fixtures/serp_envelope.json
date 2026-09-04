@@ -1,0 +1,36 @@
+{
+  "version": "0.1.20241227",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "0.4521 sec.",
+  "cost": 0.002,
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "01011234-0000-0066-0000-fixture0000se",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "0.3812 sec.",
+      "cost": 0.002,
+      "result_count": 1,
+      "path": ["v3", "serp", "google", "organic", "live", "advanced"],
+      "data": {"api": "serp", "function": "live", "se": "google", "se_type": "organic"},
+      "result": [
+        {
+          "keyword": "",
+          "type": "organic",
+          "se_domain": "google.com",
+          "location_code": 2840,
+          "language_code": "en",
+          "check_url": "https://www.google.com/search?q=&num=10",
+          "datetime": "2026-09-04 12:00:00 +00:00",
+          "item_types": ["organic"],
+          "se_results_count": 0,
+          "items_count": 0,
+          "items": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "version": "0.1.20241227",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "0.2011 sec.",
+  "cost": 0.002,
+  "tasks_count": 1,
+  "tasks_error": 1,
+  "tasks": [
+    {
+      "id": "01011234-0000-0066-0000-fixture00err2",
+      "status_code": 40102,
+      "status_message": "No Search Results.",
+      "time": "0.1 sec.",
+      "cost": 0.002,
+      "result_count": 0,
+      "path": [],
+      "data": {},
+      "result": null
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "version": "0.1.20241227",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "0.0512 sec.",
+  "cost": 0,
+  "tasks_count": 1,
+  "tasks_error": 1,
+  "tasks": [
+    {
+      "id": "01011234-0000-0066-0000-fixture00err1",
+      "status_code": 50000,
+      "status_message": "Internal Error.",
+      "time": "0 sec.",
+      "cost": 0,
+      "result_count": 0,
+      "path": [],
+      "data": {},
+      "result": null
+    }
+  ]
+}

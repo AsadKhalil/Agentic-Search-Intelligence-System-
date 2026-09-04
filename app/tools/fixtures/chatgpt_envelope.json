@@ -1,0 +1,31 @@
+{
+  "version": "0.1.20241227",
+  "status_code": 20000,
+  "status_message": "Ok.",
+  "time": "8.7412 sec.",
+  "cost": 0.005,
+  "tasks_count": 1,
+  "tasks_error": 0,
+  "tasks": [
+    {
+      "id": "01011234-0000-0700-0000-fixture000llm",
+      "status_code": 20000,
+      "status_message": "Ok.",
+      "time": "8.6103 sec.",
+      "cost": 0.005,
+      "result_count": 1,
+      "path": ["v3", "ai_optimization", "chat_gpt", "llm_responses", "live"],
+      "data": {"api": "ai_optimization", "function": "llm_responses", "llm": "chat_gpt"},
+      "result": [
+        {
+          "model_name": "gpt-4o-mini",
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "web_search": false,
+          "money_spent": 0.0,
+          "items": []
+        }
+      ]
+    }
+  ]
+}
