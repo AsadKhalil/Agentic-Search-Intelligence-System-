@@ -247,8 +247,10 @@ def get_llm(settings: Settings | None = None) -> BaseChatModel:
     return ScriptedToolCallingLLM()
 
 
-def llm_mode(settings: Settings | None = None) -> str:
-    return "openai" if (settings or get_settings()).openai_api_key else "scripted"
+def llm_mode(llm: Any) -> str:
+    """Names the model that actually ran, not the one an API key in the environment
+    implies -- a caller may pin the scripted planner even with a key present."""
+    return "scripted" if isinstance(llm, ScriptedToolCallingLLM) else "openai"
 
 
 def tokens_from(message: BaseMessage) -> int:

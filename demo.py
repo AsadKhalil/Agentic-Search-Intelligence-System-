@@ -4,6 +4,11 @@ Runs the pipeline three times against the mock transport -- healthy, a dependenc
 fails twice then recovers, and a total outage -- so the retry, degradation and fallback
 paths are all visible.
 
+Both dependencies are pinned: the mock transport and the deterministic planner. The three
+runs differ only in which failures are injected, which is the whole point of the
+comparison -- a live planner would re-plan differently each time and cost real money to
+say nothing new. Real OpenAI is exercised through the API (`make run`), not here.
+
 Writes two artifacts:
   demo-output.json   every scenario's full report, metrics, planned calls and errors
   demo-logs.ndjson   the structured log stream, one JSON object per line
@@ -22,7 +27,7 @@ from typing import Any
 from app.config import get_settings
 from app.graph.build import build_graph
 from app.graph.state import initial_state
-from app.llm import llm_mode
+from app.llm import ScriptedToolCallingLLM, llm_mode
 from app.observability.logging import (
     JsonFormatter,
     bind_run,
@@ -51,6 +56,7 @@ SCENARIOS = [
 def run(label: str, fail_first_n: dict[str, int] | None) -> dict[str, Any]:
     settings = get_settings()
     graph = build_graph(
+        llm=ScriptedToolCallingLLM(),   # pinned, whatever OPENAI_API_KEY says
         client=DataForSEOClient(settings, backend=MockBackend(
             domain_hint=PROFILE.domain, fail_first_n=fail_first_n)),
         settings=settings,
@@ -128,7 +134,10 @@ def main() -> None:
         "question": QUESTION,
         "profile": PROFILE.model_dump(),
         "config": {
-            "llm_mode": llm_mode(settings),
+            # Both of the demo's dependencies are pinned, so record what actually ran
+            # rather than what the environment would have selected.
+            "llm_mode": llm_mode(ScriptedToolCallingLLM()),
+            "planner": "deterministic (pinned by the demo so all three runs plan alike)",
             "llm_model": settings.llm_model,
             # The demo always constructs a MockBackend, whatever MOCK_DATAFORSEO says,
             # so the failure scenarios stay reproducible and cost nothing. Recording the

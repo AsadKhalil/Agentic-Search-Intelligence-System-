@@ -102,6 +102,10 @@ def node(name: str) -> Callable:
 # 1. plan_queries -- the only node that decides which tools to call
 # --------------------------------------------------------------------------
 
+# Per-tool call ceilings. The prompt below states them and `enforce_limits` applies them:
+# a prompt is a request, and every extra call is a billable provider request (PLAN §3).
+TOOL_CALL_LIMITS = {"google_serp": 2, "keyword_metrics": 1, "chatgpt_response": 1}
+
 PLANNER_PROMPT = """You are the retrieval planner for a search-visibility research system.
 
 BRAND: {name}
@@ -111,14 +115,86 @@ COMPETITORS: {competitors}
 QUESTION: {question}
 
 Plan the DataForSEO calls needed to answer the question. Rules:
-- Call google_serp for each distinct search query whose organic ranking matters (at most 2).
+- Call google_serp for each distinct search query whose organic ranking matters
+  (at most {serp_limit} calls).
 - Call keyword_metrics ONCE, passing every query you are investigating.
 - Set load_async_ai_overview to true on google_serp calls: whether the brand appears in
   the AI Overview is part of what we are measuring, and it is off by default.
-- Call chatgpt_response ONCE for the single most important query.
+- Call chatgpt_response ONCE. Its query_text must be one of the queries you passed to
+  google_serp or keyword_metrics, verbatim -- not the user's question.
 - Investigate at most {max_queries} distinct queries.
 - Keywords must be at most 80 characters and 10 words.
 Respond with tool calls only."""
+
+
+def enforce_limits(calls: list[ToolCall], max_queries: int) -> tuple[list[ToolCall], list[str]]:
+    """Trim planner output to the documented budget, before anything becomes billable.
+
+    Three ceilings, each of which a model is free to talk itself past:
+
+    * per-tool call counts (``TOOL_CALL_LIMITS``);
+    * distinct logical queries (``settings.max_planned_queries``);
+    * ``chatgpt_response.query_text`` must name a query already being measured. Left
+      alone, a model tends to pass the user's whole question there, which mints a
+      ``query_key`` nothing else covers and splits one logical query into two rows with
+      no SERP or volume data on the second (PLAN §6.1).
+
+    Returns the calls to execute and a human-readable note per adjustment.
+    """
+    kept: list[ToolCall] = []
+    dropped: list[str] = []
+    per_tool: dict[str, int] = {}
+    budget: dict[str, str] = {}          # query_key -> the text that claimed the slot
+
+    def admit(text: str) -> bool:
+        key = query_key(text)
+        if key in budget:
+            return True
+        if len(budget) >= max_queries:
+            return False
+        budget[key] = text
+        return True
+
+    # chatgpt_response is processed last so the queries it must reference are already in.
+    for call in sorted(calls, key=lambda c: c.name == "chatgpt_response"):
+        cap = TOOL_CALL_LIMITS.get(call.name)
+        if cap is None:
+            dropped.append(f"{call.name}: not a tool this planner may call")
+            continue
+        if per_tool.get(call.name, 0) >= cap:
+            dropped.append(f"{call.name}: over its limit of {cap} call(s)")
+            continue
+        try:
+            args = validate_args(call.name, call.args)
+        except ToolArgumentError:
+            kept.append(call)            # retrieve rejects it and records the real reason
+            per_tool[call.name] = per_tool.get(call.name, 0) + 1
+            continue
+
+        if call.name == "chatgpt_response":
+            if query_key(args.query_text) not in budget:
+                if not budget:
+                    dropped.append("chatgpt_response: no measured query to attach it to")
+                    continue
+                anchor = next(iter(budget.values()))
+                dropped.append(f"chatgpt_response: query_text re-anchored to {anchor!r}")
+                call = ToolCall(name=call.name, id=call.id,
+                                args={**call.args, "query_text": anchor})
+        else:
+            texts = args.query_texts()
+            allowed = [t for t in texts if admit(t)]
+            if not allowed:
+                dropped.append(f"{call.name}: over the {max_queries}-query budget")
+                continue
+            if len(allowed) < len(texts) and call.name == "keyword_metrics":
+                dropped.append(f"keyword_metrics: trimmed {len(texts)} keywords to "
+                               f"{len(allowed)} to stay inside the query budget")
+                call = ToolCall(name=call.name, id=call.id,
+                                args={**call.args, "keywords": allowed})
+
+        per_tool[call.name] = per_tool.get(call.name, 0) + 1
+        kept.append(call)
+    return kept, dropped
 
 
 @node("plan_queries")
@@ -131,6 +207,7 @@ def plan_queries(state: PipelineState, deps: Deps) -> dict[str, Any]:
         competitors=", ".join(profile.competitors) or "unspecified",
         question=state["question"],
         max_queries=deps.settings.max_planned_queries,
+        serp_limit=TOOL_CALL_LIMITS["google_serp"],
     )
     try:
         bound = deps.llm.bind_tools(TOOLS)
@@ -145,23 +222,28 @@ def plan_queries(state: PipelineState, deps: Deps) -> dict[str, Any]:
         }
 
     raw_calls = getattr(message, "tool_calls", None) or []
-    if not raw_calls:
+    calls, dropped = enforce_limits(
+        [ToolCall(name=c.get("name", ""), args=c.get("args") or {}, id=c.get("id"))
+         for c in raw_calls],
+        deps.settings.max_planned_queries,
+    )
+    if dropped:
+        log.warning("plan.over_budget", extra={"dropped": dropped})
+
+    if not calls:
+        reason = ("model returned no tool calls" if not raw_calls
+                  else f"every planned call was rejected by the budget: {'; '.join(dropped)}")
         return {
             "tool_calls": [],
-            "errors": [PipelineError(node="plan_queries", kind="llm",
-                                     message="model returned no tool calls")],
+            "errors": [PipelineError(node="plan_queries", kind="llm", message=reason)],
             "_ok": False,
             "_tokens": tokens_from(message),
         }
 
-    calls = [
-        ToolCall(name=c.get("name", ""), args=c.get("args") or {}, id=c.get("id"))
-        for c in raw_calls
-    ]
     return {
         "tool_calls": calls,
         "_tokens": tokens_from(message),
-        "_detail": {"planned_calls": [c.name for c in calls]},
+        "_detail": {"planned_calls": [c.name for c in calls], "dropped_calls": dropped},
     }
 
 
@@ -170,18 +252,19 @@ def fallback_plan(state: PipelineState, deps: Deps) -> dict[str, Any]:
     """Deterministic template built from the question, brand name and industry --
     the only fields a profile carries."""
     profile = state["profile"]
-    calls = [
-        ToolCall(name=c["name"], args=c["args"], id=c["id"])
-        for c in template_tool_calls(
-            state["question"], name=profile.name, industry=profile.industry,
-            model_name=deps.settings.llm_model,
-            max_queries=deps.settings.max_planned_queries,
-        )
-    ]
+    calls, dropped = enforce_limits(
+        [ToolCall(name=c["name"], args=c["args"], id=c["id"])
+         for c in template_tool_calls(
+             state["question"], name=profile.name, industry=profile.industry,
+             model_name=deps.settings.llm_model,
+             max_queries=deps.settings.max_planned_queries,
+         )],
+        deps.settings.max_planned_queries,
+    )
     return {
         "tool_calls": calls,
         "degraded": True,
-        "_detail": {"planned_calls": [c.name for c in calls]},
+        "_detail": {"planned_calls": [c.name for c in calls], "dropped_calls": dropped},
     }
 
 
@@ -623,7 +706,7 @@ def report(state: PipelineState, deps: Deps) -> dict[str, Any]:
         "correlation_id": state.get("correlation_id"),
         "status": status,
         "degraded": bool(state.get("degraded")),
-        "llm_mode": llm_mode(deps.settings),
+        "llm_mode": llm_mode(deps.llm),
         "analysis_generated_by": analysis.generated_by if analysis else "none",
         "queries_analysed": len(merged),
         "visibility": {"visible": len(visible), "not_visible": len(invisible),

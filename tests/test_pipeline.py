@@ -2,7 +2,7 @@
 from app.llm import ScriptedToolCallingLLM
 from app.tools.mock import MockBackend
 
-from tests.conftest import DOMAIN, PlannerFailsLLM
+from tests.conftest import DOMAIN, QUESTION, PlannerFailsLLM
 
 
 def test_happy_path_completes(make_run):
@@ -148,3 +148,56 @@ def test_planner_measures_ai_overview(make_run):
     )
     assert any(q["ai_overview_mentioned"] is not None
                for q in state["report_document"]["queries"])
+
+
+def test_planner_budget_is_enforced_not_merely_requested(make_run, settings):
+    """The prompt asks for a budget; a model is free to ignore a prompt. Every extra call
+    is billable, so the ceiling has to hold in code before retrieval (PLAN §3)."""
+    greedy = [[
+        *({"name": "google_serp",
+           "args": {"keyword": f"query {n}", "location_code": 2840, "language_code": "en",
+                    "depth": 10, "load_async_ai_overview": True},
+           "id": f"s{n}", "type": "tool_call"} for n in range(6)),
+        {"name": "keyword_metrics",
+         "args": {"keywords": [f"query {n}" for n in range(20)]},
+         "id": "k1", "type": "tool_call"},
+        {"name": "chatgpt_response",
+         "args": {"query_text": "something else entirely", "user_prompt": "hello",
+                  "model_name": "gpt-4o-mini"},
+         "id": "c1", "type": "tool_call"},
+    ]]
+    state = make_run(llm=ScriptedToolCallingLLM(tool_call_script=greedy))
+    calls = state["tool_calls"]
+
+    assert sum(c.name == "google_serp" for c in calls) == 2
+    assert sum(c.name == "keyword_metrics" for c in calls) == 1
+    assert sum(c.name == "chatgpt_response" for c in calls) == 1
+    assert len({q.query_key for q in state["planned_queries"]}) <= settings.max_planned_queries
+    metrics = next(c for c in calls if c.name == "keyword_metrics")
+    assert len(metrics.args["keywords"]) <= settings.max_planned_queries
+    # 8 planned calls asked for, 4 executed: the run cannot outspend its budget
+    assert sum(e.api_calls for e in state["node_events"]) == len(calls)
+
+
+def test_chatgpt_query_text_cannot_mint_its_own_query_row(make_run):
+    """A planner left to itself passes the user's whole question as chatgpt query_text.
+    That mints a query_key nothing else measures, so one logical query becomes two rows
+    and the second carries no ranking or volume data (PLAN §6.1)."""
+    script = [[
+        {"name": "google_serp",
+         "args": {"keyword": "agile planning tools", "location_code": 2840,
+                  "language_code": "en", "depth": 10, "load_async_ai_overview": True},
+         "id": "s1", "type": "tool_call"},
+        {"name": "chatgpt_response",
+         "args": {"query_text": QUESTION, "user_prompt": QUESTION,
+                  "model_name": "gpt-4o-mini"},
+         "id": "c1", "type": "tool_call"},
+    ]]
+    state = make_run(llm=ScriptedToolCallingLLM(tool_call_script=script))
+
+    assert {q.query_key for q in state["planned_queries"]} == {"agile planning tools"}
+    chat = next(c for c in state["tool_calls"] if c.name == "chatgpt_response")
+    assert chat.args["query_text"] == "agile planning tools"
+    # and the ChatGPT evidence lands on the row that also has the organic data
+    row = state["merged"][0]
+    assert set(row.sources) >= {"chatgpt", "organic"}

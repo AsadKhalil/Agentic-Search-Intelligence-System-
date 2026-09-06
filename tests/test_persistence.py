@@ -1,4 +1,7 @@
 """Query identity and the recheck contract (PLAN §6, §9.9)."""
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from app.db import SessionLocal
 from app.models import PipelineRun, Query, Recommendation
 
@@ -129,3 +132,39 @@ def test_run_row_records_metrics_and_report(api, created_profile):
     assert run.metrics["nodes"]["retrieve"]["api_calls"] >= 3
     assert run.report["summary"]
     assert run.correlation_id
+
+
+def test_recheck_leaves_no_orphaned_recommendations(api, created_profile):
+    """A recheck used to write its own query rows, then bulk-delete them -- which leaves
+    the recommendations that pointed at those rows behind, aimed at nothing."""
+    _run(api, created_profile["uuid"])
+    listed = api.get(f"/api/v1/profiles/{created_profile['uuid']}/queries").json()
+    target = listed["items"][0]
+
+    assert api.post(f"/api/v1/queries/{target['uuid']}/recheck").status_code == 200
+
+    with SessionLocal() as session:
+        live = {q.uuid for q in session.query(Query).all()}
+        recs = session.query(Recommendation).all()
+        assert [r.uuid for r in recs if r.target_query_uuid not in live] == []
+
+        recheck_run = session.query(PipelineRun).filter(PipelineRun.kind == "recheck").one()
+        assert session.query(Query).filter(Query.run_uuid == recheck_run.uuid).count() == 0, (
+            "a recheck updates the canonical row; it does not write a second one"
+        )
+
+    # the rechecked query is still reachable through the profile's recommendations
+    after = api.get(f"/api/v1/profiles/{created_profile['uuid']}/recommendations").json()
+    assert after["total"] >= 1
+
+
+def test_sqlite_rejects_a_dangling_reference(db):
+    """SQLite parses FOREIGN KEY and then ignores it unless asked per connection, so
+    without the PRAGMA an orphan commits and the database reports itself healthy."""
+    with SessionLocal() as session:
+        session.add(Recommendation(
+            uuid="orphan", run_uuid="no-such-run", target_query_uuid="no-such-query",
+            content_type="guide", title="t", rationale="r",
+        ))
+        with pytest.raises(IntegrityError):
+            session.commit()
