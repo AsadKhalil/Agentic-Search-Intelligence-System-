@@ -27,3 +27,8 @@ tmp/
 demo-output.json
 demo-logs.ndjson
 demo-report.html
+
+# --- Assessment working docs (local only) ---
+PLAN.md
+DIAGRAMS.md
+*.pdf
