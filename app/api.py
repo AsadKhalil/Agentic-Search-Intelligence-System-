@@ -60,7 +60,8 @@ class Runner:
             return self._client
         if self.settings.mock_dataforseo:
             return DataForSEOClient(self.settings, backend=MockBackend(
-                domain_hint=profile.domain, latency_ms=self.settings.mock_latency_ms))
+                domain_hint=profile.domain, competitors=profile.competitors,
+                latency_ms=self.settings.mock_latency_ms))
         return DataForSEOClient(self.settings)
 
     def graph_for(self, profile: ProfileSnapshot):

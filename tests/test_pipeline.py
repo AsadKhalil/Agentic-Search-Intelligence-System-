@@ -212,3 +212,22 @@ def test_core_phrase_drops_a_particle_its_verb_left_behind():
     # "up" survives when it is not orphaned -- this is a real search phrase
     assert core_phrase("What are the best stand up meeting tools?") == (
         "best stand up meeting tools")
+
+
+def test_the_fixture_serp_ranks_the_profile_s_own_competitors(make_run, profile):
+    """The fixture pool used to be hardcoded to project-management tools, so any other
+    kind of brand was measured against Asana and Trello."""
+    coffee = profile.model_copy(update={
+        "name": "Northwind Coffee", "domain": "northwindcoffee.com",
+        "industry": "specialty coffee subscriptions",
+        "competitors": ["bluebottle.com", "trade.coffee"],
+    })
+    state = make_run(backend=MockBackend(domain_hint=coffee.domain,
+                                         competitors=coffee.competitors),
+                     question="Do we show up when people search for coffee subscriptions?",
+                     prof=coffee)
+
+    ranked = {d for q in state["merged"]
+              for d in ((q.evidence.get("organic") or {}).get("top_domains") or [])}
+    assert {"bluebottle.com", "trade.coffee"} <= ranked
+    assert not ranked & {"asana.com", "monday.com", "clickup.com"}

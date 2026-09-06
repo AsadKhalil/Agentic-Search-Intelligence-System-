@@ -19,9 +19,12 @@ from typing import Any
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-_COMPETITOR_POOL = [
-    "asana.com", "monday.com", "clickup.com", "notion.so", "trello.com",
-    "wrike.com", "smartsheet.com", "basecamp.com", "linear.app", "height.app",
+# Padding for the fixture SERP: domains that plausibly rank for almost any query. The
+# profile's own competitors go in front of these, so a coffee brand is not measured
+# against Asana just because the fixture was first written for a project-management demo.
+_GENERIC_POOL = [
+    "reddit.com", "wikipedia.org", "quora.com", "youtube.com",
+    "trustpilot.com", "medium.com", "forbes.com", "nytimes.com",
 ]
 
 
@@ -51,11 +54,14 @@ class MockBackend:
         self,
         *,
         domain_hint: str | None = None,
+        competitors: list[str] | None = None,
         fail_first_n: dict[str, int] | None = None,
         latency_ms: int = 0,
         empty_for: set[str] | None = None,
     ) -> None:
         self.domain_hint = (domain_hint or "").lower().removeprefix("www.") or None
+        self.pool = [c.lower().removeprefix("www.") for c in (competitors or [])]
+        self.pool += [d for d in _GENERIC_POOL if d not in self.pool]
         self.fail_first_n = dict(fail_first_n or {})
         self.latency_ms = latency_ms
         self.empty_for = {k.lower() for k in (empty_for or set())}
@@ -97,7 +103,7 @@ class MockBackend:
         result["check_url"] = f"https://www.google.com/search?q={keyword.replace(' ', '+')}"
         result["se_results_count"] = d["search_volume"] * 9137
 
-        domains = list(_COMPETITOR_POOL)
+        domains = list(self.pool)
         if self.domain_hint and d["visible"]:
             slot = min(d["position"], depth) - 1
             domains.insert(slot, self.domain_hint)
@@ -180,7 +186,7 @@ class MockBackend:
         result["input_tokens"] = max(1, len(prompt) // 4)
         result["output_tokens"] = 180
 
-        mentioned = list(_COMPETITOR_POOL[:3])
+        mentioned = list(self.pool[:3])
         if self.domain_hint and d["chatgpt_mentions"]:
             mentioned.insert(1, self.domain_hint)
         text = (

@@ -277,10 +277,13 @@ structured log stream goes to `demo-logs.ndjson` (`--verbose` also streams it to
 The brand and the question are flags, not constants — point it anywhere:
 
 ```bash
-python demo.py --brand "Northwind Coffee" --domain northwindcoffee.com \
-  --industry "specialty coffee subscriptions" --competitors "bluebottle.com,trade.coffee" \
-  --question "Do we show up when people search for coffee subscriptions?"
+python demo.py --brand "Acme" --domain acme.io --industry "project management" \
+  --competitors "asana.com,monday.com" \
+  --question "Are we visible for agile planning tools?"
 ```
+
+The fixture SERP ranks the profile's own competitors, padded with domains that plausibly
+rank for anything (reddit, wikipedia, trustpilot). Change the brand and the results follow.
 
 **1. Baseline, nothing broken** — `plan_queries → retrieve → normalize → analyze → report`,
 4 API calls, 0 retries, `status: completed`.
@@ -383,7 +386,7 @@ retries, API calls, plus run totals and the node path actually taken.
   ],
   "recommendations": [
     {"target_query_key": "best agile planning tools", "content_type": "visibility audit",
-     "title": "Best Agile Planning Tools: buyer's guide", "priority": "high"}
+     "title": "Check where Acme stands for 'best agile planning tools'", "priority": "high"}
   ],
   "metrics": {"nodes": {"retrieve": {"invocations": 1, "api_calls": 4, "retries": 0}},
               "node_sequence": ["plan_queries","retrieve","normalize","analyze","report"]}

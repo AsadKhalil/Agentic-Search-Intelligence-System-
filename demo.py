@@ -43,10 +43,11 @@ from app.tools.mock import MockBackend
 # Defaults only -- every field is overridable from the command line, so the demo can be
 # pointed at any brand and question without editing this file.
 DEFAULT_PROFILE = ProfileSnapshot(
-    uuid="demo-profile", name="Acme", domain="acme.io",
-    industry="project management", competitors=["asana.com", "monday.com"],
+    uuid="demo-profile", name="Northwind Coffee", domain="northwindcoffee.com",
+    industry="specialty coffee subscriptions",
+    competitors=["bluebottle.com", "trade.coffee", "atlascoffeeclub.com"],
 )
-DEFAULT_QUESTION = "Are we visible for agile planning tools?"
+DEFAULT_QUESTION = "Do we show up when people search for coffee subscriptions?"
 
 # fail_first_n is exact, not random: the tool fails its first N attempts and then
 # succeeds. Retries are budgeted at RETRY_MAX_ATTEMPTS (4 by default), so 2 recovers
@@ -73,7 +74,8 @@ def run(label: str, fail_first_n: dict[str, int] | None,
     graph = build_graph(
         llm=ScriptedToolCallingLLM(),   # pinned, whatever OPENAI_API_KEY says
         client=DataForSEOClient(settings, backend=MockBackend(
-            domain_hint=profile.domain, fail_first_n=fail_first_n)),
+            domain_hint=profile.domain, competitors=profile.competitors,
+            fail_first_n=fail_first_n)),
         settings=settings,
     )
     correlation_id = new_correlation_id()
