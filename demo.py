@@ -109,6 +109,10 @@ def main() -> None:
                         help="results file; pass an empty string to skip")
     parser.add_argument("--log-file", default="demo-logs.ndjson",
                         help="structured log stream; pass an empty string to skip")
+    parser.add_argument("--report", default="demo-report.html",
+                        help="HTML console built from the results; empty string to skip")
+    parser.add_argument("--no-open", action="store_true",
+                        help="write the report but do not open a browser")
     args = parser.parse_args()
 
     configure_logging(args.log_level, args.log_format)
@@ -155,6 +159,12 @@ def main() -> None:
         print(f"wrote {args.log_file} ({lines} log lines)")
         print(f"  jq -c 'select(.correlation_id==\"{artifact['scenarios'][-1]['correlation_id']}\")' "
               f"{args.log_file}")
+
+    # The JSON is the record; the report is the thing anyone actually reads.
+    if args.report and args.out:
+        import report as report_module
+
+        report_module.build(args.out, args.report, open_after=not args.no_open)
 
 
 if __name__ == "__main__":

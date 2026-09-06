@@ -1,7 +1,7 @@
 VENV := .venv
 PY   := $(VENV)/bin/python
 
-.PHONY: install run test demo demo-console walkthrough clean
+.PHONY: install run test demo demo-console report walkthrough clean
 
 install:            ## create the venv and install pinned dependencies
 	@if command -v uv >/dev/null 2>&1; then \
@@ -23,11 +23,14 @@ run:                ## serve the API on http://127.0.0.1:8000 (docs at /docs)
 test:               ## full offline test suite
 	$(PY) -m pytest -q
 
-demo:               ## three runs: healthy, retry-then-recover, everything down
+demo:               ## three runs; writes JSON + logs + HTML report, then opens it
 	$(PY) demo.py
 
-demo-console:       ## same, with human-readable logs
-	$(PY) demo.py --log-format console
+report:             ## rebuild demo-report.html from demo-output.json and open it
+	$(PY) report.py --open
+
+demo-console:       ## same, with human-readable logs, no browser
+	$(PY) demo.py --log-format console --no-open
 
 walkthrough:        ## drive the live API end to end (needs 'make run' in another shell)
 	$(PY) walkthrough.py --recheck
@@ -35,4 +38,5 @@ walkthrough:        ## drive the live API end to end (needs 'make run' in anothe
 clean:
 	rm -f agentic_search.db
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
+	rm -f demo-output.json demo-logs.ndjson demo-report.html
 	rm -rf .pytest_cache
