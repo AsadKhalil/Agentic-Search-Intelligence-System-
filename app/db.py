@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -16,6 +16,17 @@ _connect_args = (
 )
 
 engine = create_engine(_settings.database_url, connect_args=_connect_args, future=True)
+
+if _settings.database_url.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _enforce_sqlite_foreign_keys(dbapi_connection, _record) -> None:
+        """SQLite parses FOREIGN KEY clauses but ignores them unless asked per
+        connection, so without this a recommendation could keep pointing at a deleted
+        query row and the database would report itself healthy."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 

@@ -106,7 +106,16 @@ def _latest_full_run_uuid(session: Session, profile_uuid: str) -> str | None:
 
 
 def _persist(session: Session, profile: Profile, state: dict[str, Any], *, kind: str,
-             question: str, started: datetime, duration_ms: float) -> PipelineRun:
+             question: str, started: datetime, duration_ms: float,
+             persist_queries: bool = True) -> PipelineRun:
+    """Writes the run row, and -- for a full run -- one query row per distinct query plus
+    its recommendations. Adds only; the caller owns the transaction, so a recheck can
+    persist its run and edit the canonical rows in a single commit.
+
+    A recheck passes ``persist_queries=False``: its findings belong on the query row that
+    already exists, and writing a second set only to delete it afterwards would strand the
+    recommendations that pointed at it.
+    """
     document = state.get("report_document") or {}
     metrics = RunMetrics(state.get("node_events", []))
     merged = state.get("merged", [])
@@ -125,6 +134,9 @@ def _persist(session: Session, profile: Profile, state: dict[str, Any], *, kind:
         report=document, metrics=metrics.as_dict(),
     )
     session.add(run)
+
+    if not persist_queries:
+        return run
 
     key_to_uuid: dict[str, str] = {}
     for row in merged:
@@ -152,7 +164,6 @@ def _persist(session: Session, profile: Profile, state: dict[str, Any], *, kind:
             content_type=rec.content_type, title=rec.title, rationale=rec.rationale,
             target_keywords=rec.target_keywords, priority=rec.priority,
         ))
-    session.commit()
     return run
 
 
@@ -228,6 +239,7 @@ def run_pipeline(profile_uuid: str, body: RunRequest,
         )
         run = _persist(session, profile, state, kind="full", question=body.question,
                        started=started, duration_ms=(perf_counter() - clock) * 1000)
+        session.commit()
         log.info("run.finish", extra={"run_uuid": run.uuid, "status": run.status,
                                       "degraded": run.degraded})
     return _run_response(run, state)
@@ -259,7 +271,8 @@ def recheck_query(query_uuid: str, session: Session = Depends(get_session),
         state = runner.recheck_graph_for(snapshot).invoke(state_in)
         run = _persist(session, profile, state, kind="recheck",
                        question=f"Recheck: {record.query_text}", started=started,
-                       duration_ms=(perf_counter() - clock) * 1000)
+                       duration_ms=(perf_counter() - clock) * 1000,
+                       persist_queries=False)
 
         # Update the existing query row in place and replace its recommendations, so the
         # profile's latest-full-run view reflects the recheck (PLAN §6).
@@ -289,10 +302,6 @@ def recheck_query(query_uuid: str, session: Session = Depends(get_session),
                 content_type=rec.content_type, title=rec.title, rationale=rec.rationale,
                 target_keywords=rec.target_keywords, priority=rec.priority,
             ))
-        # The recheck run's own duplicate query rows are noise; the canonical row is the
-        # one just updated in place.
-        session.query(Query).filter(Query.run_uuid == run.uuid).delete(
-            synchronize_session=False)
         session.commit()
         log.info("run.finish", extra={"run_uuid": run.uuid, "status": run.status})
     return _run_response(run, state)
