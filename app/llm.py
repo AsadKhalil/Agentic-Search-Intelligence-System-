@@ -35,7 +35,13 @@ _STOP = {
     "visible", "visibility", "rank", "ranking", "ranks", "appear", "appearing",
     "us", "you", "your", "have", "has", "been", "get", "find", "show", "showing",
     "mentioned", "mention", "currently", "search", "searches", "results",
+    # generic actors: never part of the commercial query being investigated
+    "people", "someone", "anyone", "somebody", "everyone",
 }
+
+# These carry meaning of their own ("stand up meeting tools") but not when the verb they
+# belong to has just been dropped -- "show up" leaves a bare "up" that means nothing.
+_PARTICLES = {"up", "out", "off", "over", "through", "around"}
 
 
 def _clip(phrase: str) -> str:
@@ -49,7 +55,16 @@ def _clip(phrase: str) -> str:
 
 
 def core_phrase(question: str) -> str:
-    words = [w for w in re.findall(r"[a-z0-9+&']+", question.lower()) if w not in _STOP]
+    words: list[str] = []
+    orphaned = False
+    for token in re.findall(r"[a-z0-9+&']+", question.lower()):
+        if token in _STOP:
+            orphaned = True
+            continue
+        if orphaned and token in _PARTICLES:
+            continue                       # its verb was just dropped; it means nothing alone
+        orphaned = False
+        words.append(token)
     return _clip(" ".join(words[:6]))
 
 

@@ -40,11 +40,13 @@ from app.schemas import ProfileSnapshot
 from app.tools.dataforseo import DataForSEOClient
 from app.tools.mock import MockBackend
 
-PROFILE = ProfileSnapshot(
+# Defaults only -- every field is overridable from the command line, so the demo can be
+# pointed at any brand and question without editing this file.
+DEFAULT_PROFILE = ProfileSnapshot(
     uuid="demo-profile", name="Acme", domain="acme.io",
     industry="project management", competitors=["asana.com", "monday.com"],
 )
-QUESTION = "Are we visible for agile planning tools?"
+DEFAULT_QUESTION = "Are we visible for agile planning tools?"
 
 # fail_first_n is exact, not random: the tool fails its first N attempts and then
 # succeeds. Retries are budgeted at RETRY_MAX_ATTEMPTS (4 by default), so 2 recovers
@@ -65,18 +67,19 @@ TOOL_LABEL = {
 }
 
 
-def run(label: str, fail_first_n: dict[str, int] | None) -> dict[str, Any]:
+def run(label: str, fail_first_n: dict[str, int] | None,
+        profile: ProfileSnapshot, question: str) -> dict[str, Any]:
     settings = get_settings()
     graph = build_graph(
         llm=ScriptedToolCallingLLM(),   # pinned, whatever OPENAI_API_KEY says
         client=DataForSEOClient(settings, backend=MockBackend(
-            domain_hint=PROFILE.domain, fail_first_n=fail_first_n)),
+            domain_hint=profile.domain, fail_first_n=fail_first_n)),
         settings=settings,
     )
     correlation_id = new_correlation_id()
     print(f"\n=== {label}  (correlation_id={correlation_id}) ===")
     with bind_run(correlation_id):
-        state = graph.invoke(initial_state(profile=PROFILE, question=QUESTION,
+        state = graph.invoke(initial_state(profile=profile, question=question,
                                            correlation_id=correlation_id))
 
     document = state["report_document"]
@@ -120,7 +123,8 @@ def run(label: str, fail_first_n: dict[str, int] | None) -> dict[str, Any]:
     return scenario
 
 
-def simple_example(scenario: dict[str, Any]) -> None:
+def simple_example(scenario: dict[str, Any], profile: ProfileSnapshot,
+                   question: str) -> None:
     """One query walked end to end, before the failure scenarios add any noise.
 
     Everything below already happened in run 1; this only re-reads it in plain words,
@@ -130,8 +134,8 @@ def simple_example(scenario: dict[str, Any]) -> None:
     row = (next((q for q in report["queries"] if q["domain_visible"] is True), None)
            or next((q for q in report["queries"] if q["domain_visible"] is not None), None))
     print("\n=== A simple example: one search from run 1, start to finish ===")
-    print(f'  We asked      "{QUESTION}"')
-    print(f"  About         {PROFILE.name} ({PROFILE.domain})")
+    print(f'  We asked      "{question}"')
+    print(f"  About         {profile.name} ({profile.domain})")
     print(f"  It planned    {len(scenario['planned_calls'])} provider calls covering "
           f"{report['queries_analysed']} search phrases")
     if row is None:
@@ -141,13 +145,13 @@ def simple_example(scenario: dict[str, Any]) -> None:
     evidence = row.get("evidence") or {}
     organic = evidence.get("organic") or {}
     print(f'\n  Following just one of them: "{row["query_text"]}"')
-    seen = (f"{PROFILE.domain} found at position {row['visibility_position']}"
-            if row["domain_visible"] else f"{PROFILE.domain} not in the results")
+    seen = (f"{profile.domain} found at position {row['visibility_position']}"
+            if row["domain_visible"] else f"{profile.domain} not in the results")
     print(f"    1. Google search results   -> {seen} "
           f"of {organic.get('results_inspected', '?')} inspected")
     print(f"    2. Search volume           -> {row['search_volume']:,} searches/month, "
           f"difficulty {row['competitive_difficulty']:.0f}/100")
-    print(f"    3. ChatGPT's answer        -> {PROFILE.name} "
+    print(f"    3. ChatGPT's answer        -> {profile.name} "
           f"{'is' if row['chatgpt_mentioned'] else 'is not'} mentioned")
     print(f"    => opportunity {row['opportunity_score']} "
           f"(demand, difficulty and current visibility combined into one 0-1 number)")
@@ -175,7 +179,21 @@ def main() -> None:
                         help="write the report but do not open a browser")
     parser.add_argument("--verbose", action="store_true",
                         help="also stream the structured logs to the console")
+    parser.add_argument("--question", default=DEFAULT_QUESTION,
+                        help="the question to put to the pipeline")
+    parser.add_argument("--brand", default=DEFAULT_PROFILE.name)
+    parser.add_argument("--domain", default=DEFAULT_PROFILE.domain)
+    parser.add_argument("--industry", default=DEFAULT_PROFILE.industry)
+    parser.add_argument("--competitors", default=",".join(DEFAULT_PROFILE.competitors),
+                        help="comma-separated")
     args = parser.parse_args()
+
+    question = args.question
+    profile = ProfileSnapshot(
+        uuid="demo-profile", name=args.brand, domain=args.domain,
+        industry=args.industry,
+        competitors=[c.strip() for c in args.competitors.split(",") if c.strip()],
+    )
 
     configure_logging(args.log_level, args.log_format)
     if not args.verbose:
@@ -192,8 +210,8 @@ def main() -> None:
     settings = get_settings()
     artifact: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "question": QUESTION,
-        "profile": PROFILE.model_dump(),
+        "question": question,
+        "profile": profile.model_dump(),
         "config": {
             # Both of the demo's dependencies are pinned, so record what actually ran
             # rather than what the environment would have selected.
@@ -225,9 +243,9 @@ def main() -> None:
     print("  they report are injected by the demo, not faults in the system.")
 
     for index, (label, fail) in enumerate(SCENARIOS):
-        artifact["scenarios"].append(run(label, fail))
+        artifact["scenarios"].append(run(label, fail, profile, question))
         if index == 0:
-            simple_example(artifact["scenarios"][0])
+            simple_example(artifact["scenarios"][0], profile, question)
 
     if args.out:
         Path(args.out).write_text(json.dumps(artifact, indent=2, default=str))

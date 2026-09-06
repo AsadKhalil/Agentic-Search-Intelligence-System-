@@ -274,6 +274,14 @@ drives the give-up path.
 The console prints a plain walk-through of one search and one summary per run; the
 structured log stream goes to `demo-logs.ndjson` (`--verbose` also streams it to stdout).
 
+The brand and the question are flags, not constants — point it anywhere:
+
+```bash
+python demo.py --brand "Northwind Coffee" --domain northwindcoffee.com \
+  --industry "specialty coffee subscriptions" --competitors "bluebottle.com,trade.coffee" \
+  --question "Do we show up when people search for coffee subscriptions?"
+```
+
 **1. Baseline, nothing broken** — `plan_queries → retrieve → normalize → analyze → report`,
 4 API calls, 0 retries, `status: completed`.
 

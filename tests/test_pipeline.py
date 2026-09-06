@@ -1,5 +1,5 @@
 """Happy path, partial success, and LLM-failure containment (PLAN §9.1, §9.4, §9.7)."""
-from app.llm import ScriptedToolCallingLLM
+from app.llm import ScriptedToolCallingLLM, core_phrase
 from app.tools.mock import MockBackend
 
 from tests.conftest import DOMAIN, QUESTION, PlannerFailsLLM
@@ -201,3 +201,14 @@ def test_chatgpt_query_text_cannot_mint_its_own_query_row(make_run):
     # and the ChatGPT evidence lands on the row that also has the organic data
     row = state["merged"][0]
     assert set(row.sources) >= {"chatgpt", "organic"}
+
+
+def test_core_phrase_drops_a_particle_its_verb_left_behind():
+    """"show up" is dropped a word at a time, and a bare "up" would then be planned as a
+    paid search term. Position matters: the same word carries meaning elsewhere."""
+    assert core_phrase("Do we show up when people search for coffee subscriptions?") == (
+        "coffee subscriptions")
+    assert core_phrase("Are we visible for agile planning tools?") == "agile planning tools"
+    # "up" survives when it is not orphaned -- this is a real search phrase
+    assert core_phrase("What are the best stand up meeting tools?") == (
+        "best stand up meeting tools")
