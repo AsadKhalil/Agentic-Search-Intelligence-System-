@@ -207,18 +207,33 @@ class ScriptedToolCallingLLM(BaseChatModel):
                      else "of unknown organic standing")
             insights.append({
                 "query_key": key,
-                "rationale": (f"{brand} is {where} for '{key}', against monthly volume "
-                              f"{row.get('search_volume')} and difficulty "
-                              f"{row.get('competitive_difficulty')}."),
+                "rationale": (
+                    f"{brand} is {where} for '{key}', against "
+                    + (f"{row['search_volume']:,} searches a month"
+                       if row.get("search_volume") else "unmeasured demand")
+                    + (f" and a difficulty of {row['competitive_difficulty']:.0f}/100."
+                       if row.get("competitive_difficulty") is not None
+                       else " and unmeasured difficulty.")),
             })
         for row in sorted(rows, key=lambda r: r.get("opportunity_score", 0), reverse=True)[:3]:
             key = row.get("query_key", "")
+            visible, volume = row.get("domain_visible"), row.get("search_volume")
+            demand = f"about {volume:,} searches a month" if volume else "unmeasured demand"
+            if visible is False:
+                title = f"Write a comparison page for '{key}'"
+                why = f"{brand} is absent from the first page, against {demand}."
+            elif visible is True:
+                title = f"Refresh the page that already ranks for '{key}'"
+                why = (f"{brand} sits at position {row.get('visibility_position')} on "
+                       f"{demand}; holding that is cheaper than winning it back.")
+            else:
+                title = f"Check where {brand} stands for '{key}'"
+                why = f"There are {demand} here and no organic position was measured."
             recommendations.append({
                 "target_query_key": key,
-                "content_type": content_type_for(row.get("domain_visible")),
-                "title": f"{key.title()}: buyer's guide",
-                "rationale": (f"Opportunity score {row.get('opportunity_score')} — the "
-                              f"largest gap between demand and current visibility."),
+                "content_type": content_type_for(visible),
+                "title": title,
+                "rationale": why,
                 "target_keywords": [key],
                 "priority": "high" if row.get("opportunity_score", 0) >= 0.6 else "medium",
             })

@@ -15,7 +15,7 @@ retries, degradation and both fallbacks — is reproducible offline.
 
 ```bash
 make install          # venv (python 3.12) + pinned deps
-make test             # 95 tests, offline, ~0.5s
+make test             # 99 tests, offline, ~0.5s
 make demo             # healthy run, retry-then-recover, total outage
                       #   -> demo-output.json  full reports, metrics, errors
                       #   -> demo-logs.ndjson  the structured log stream
@@ -153,6 +153,25 @@ Limits enforced in the Pydantic schemas, each verified against the docs:
 `extra="forbid"` on all three: an invented field is a bug in the plan, and it is cheaper to
 find out locally than at the provider.
 
+### The budget is enforced, not requested
+
+The planner prompt states the call budget; a model is free to ignore a prompt, and every
+extra call is billable. So `enforce_limits` applies the ceilings in code, inside both plan
+nodes, before anything reaches `retrieve`:
+
+| Ceiling | Value | On breach |
+|---|---|---|
+| `google_serp` calls | 2 | surplus calls dropped |
+| `keyword_metrics` calls | 1 | surplus calls dropped |
+| `chatgpt_response` calls | 1 | surplus calls dropped |
+| distinct queries | `MAX_PLANNED_QUERIES` (8) | `keywords` list trimmed to fit |
+| `chatgpt_response.query_text` | must already be a measured query | rewritten to the primary query |
+
+The last row is a query-identity rule, not a cost rule. Left alone a planner passes the
+user's whole question as `query_text`, which mints a `query_key` nothing else measures and
+splits one logical query into two rows — the second carrying no ranking or volume data.
+Every adjustment is logged as `plan.over_budget` and recorded on the node event.
+
 ### Why `keyword_overview` and not the Google Ads volume endpoint
 
 `keywords_data/google_ads/search_volume/live` has no keyword-difficulty field, and the brief
@@ -223,6 +242,12 @@ already failed four times is theatre, not a fallback.
 
 `make demo` runs the same pipeline three times against the mock transport. Failure injection
 is `fail_first_n` per tool — exact, not random, because a flaky test suite is worse than none.
+
+Both dependencies are pinned: the fixture transport **and** `ScriptedToolCallingLLM`, whatever
+`OPENAI_API_KEY` says. The three runs therefore plan identically and differ only in which
+failures are injected, which is what makes the comparison mean anything — a live planner
+would re-plan on each run and the timings would compare nothing. Real OpenAI is exercised
+through the API (`make run`), not the demo.
 
 **1. Healthy** — `plan_queries → retrieve → normalize → analyze → report`, 4 API calls,
 0 retries, `status: completed`.
@@ -407,7 +432,7 @@ sinking to the bottom as if they were bad opportunities.
 
 ## Tests
 
-90 tests, all offline, no network, no keys, deterministic.
+99 tests, all offline, no network, no keys, deterministic.
 
 ```bash
 make test
