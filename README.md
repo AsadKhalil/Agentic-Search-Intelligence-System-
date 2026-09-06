@@ -14,10 +14,21 @@ retries, degradation and both fallbacks — is reproducible offline.
 ## Quick start
 
 ```bash
-make install          # uv venv (python 3.12) + pinned deps
-make test             # 90 tests, offline, ~0.4s
+make install          # venv (python 3.12) + pinned deps
+make test             # 91 tests, offline, ~0.5s
 make demo             # healthy run, retry-then-recover, total outage
 make run              # http://127.0.0.1:8000/docs
+make walkthrough      # drives the live API end to end (needs `make run` running)
+```
+
+`walkthrough.py` takes every input as a flag, so it is the quickest way to point the
+system at a different brand:
+
+```bash
+./walkthrough.py --name Linear --domain linear.app --industry "issue tracking" \
+  --question "Where do we rank for bug tracking software?" --min-score 0.3
+./walkthrough.py --profile <uuid> --question "..."   # reuse a profile
+./walkthrough.py --recheck --curl                    # + recheck, print the curl equivalents
 ```
 
 ```bash

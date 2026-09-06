@@ -1,7 +1,7 @@
 VENV := .venv
 PY   := $(VENV)/bin/python
 
-.PHONY: install run test demo demo-console clean
+.PHONY: install run test demo demo-console walkthrough clean
 
 install:            ## create the venv and install pinned dependencies
 	@if command -v uv >/dev/null 2>&1; then \
@@ -28,6 +28,9 @@ demo:               ## three runs: healthy, retry-then-recover, everything down
 
 demo-console:       ## same, with human-readable logs
 	$(PY) demo.py --log-format console
+
+walkthrough:        ## drive the live API end to end (needs 'make run' in another shell)
+	$(PY) walkthrough.py --recheck
 
 clean:
 	rm -f agentic_search.db
