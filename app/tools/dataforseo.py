@@ -98,12 +98,19 @@ class DataForSEOClient:
 
     def __init__(self, settings: Settings | None = None, backend: Any | None = None) -> None:
         self.settings = settings or get_settings()
-        self.backend = backend or (
-            MockBackend(latency_ms=self.settings.mock_latency_ms)
-            if self.settings.mock_dataforseo
-            else HttpBackend(self.settings)
-        )
+        self.backend = backend or self._default_backend()
         self.api_calls = 0
+
+    def _default_backend(self) -> Any:
+        base = (MockBackend(latency_ms=self.settings.mock_latency_ms)
+                if self.settings.mock_dataforseo else HttpBackend(self.settings))
+        if self.settings.serpapi_api_key:
+            # SerpApi answers google_serp; keyword_metrics and chatgpt_response have no
+            # SerpApi equivalent and fall through to `base`.
+            from app.tools.serpapi import SerpApiBackend
+
+            return SerpApiBackend(self.settings, fallback=base)
+        return base
 
     def timeout_for(self, tool: str) -> float:
         # Per-tool, not one global: the ChatGPT live endpoint is documented at up to 120s.

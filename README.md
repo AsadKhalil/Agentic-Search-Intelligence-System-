@@ -172,6 +172,24 @@ user's whole question as `query_text`, which mints a `query_key` nothing else me
 splits one logical query into two rows — the second carrying no ranking or volume data.
 Every adjustment is logged as `plan.over_budget` and recorded on the node event.
 
+### Optional: SerpApi for the SERP tool
+
+`SERPAPI_API_KEY` routes `google_serp` through SerpApi instead of DataForSEO. The response
+is translated into the DataForSEO envelope at the transport boundary (`app/tools/serpapi.py`),
+so `normalize`, scoring, persistence and the report are untouched and every existing test
+still covers both providers.
+
+SerpApi sells search results only — it has no keyword-volume and no ChatGPT endpoint — so
+those two tools keep whatever DataForSEO transport is configured. **With `MOCK_DATAFORSEO=true`
+that means real rankings alongside fixture volumes**, which `/health` reports separately:
+
+```json
+{"serp_transport": "serpapi", "volume_and_chatgpt_transport": "mock fixtures"}
+```
+
+One search per `google_serp` call. AI Overview references are read only when SerpApi returns
+them inline; expanding a `page_token` costs a second search and is left off deliberately.
+
 ### Why `keyword_overview` and not the Google Ads volume endpoint
 
 `keywords_data/google_ads/search_volume/live` has no keyword-difficulty field, and the brief

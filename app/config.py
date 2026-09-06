@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     dataforseo_login: str = ""
     dataforseo_password: str = ""
     dataforseo_base_url: str = "https://api.dataforseo.com"
+
+    # SerpApi covers google_serp only; the other two tools stay on the DataForSEO
+    # transport above. Empty means DataForSEO handles all three.
+    serpapi_api_key: str = ""
     mock_latency_ms: int = 0
 
     # --- LLM --------------------------------------------------------------

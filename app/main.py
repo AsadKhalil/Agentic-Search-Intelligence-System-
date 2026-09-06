@@ -25,5 +25,9 @@ def health() -> dict[str, object]:
     return {
         "status": "ok",
         "mock_dataforseo": settings.mock_dataforseo,
+        "serp_transport": "serpapi" if settings.serpapi_api_key else (
+            "mock fixtures" if settings.mock_dataforseo else "dataforseo"),
+        "volume_and_chatgpt_transport": (
+            "mock fixtures" if settings.mock_dataforseo else "dataforseo"),
         "llm_mode": "openai" if settings.openai_api_key else "scripted",
     }
