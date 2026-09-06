@@ -164,6 +164,10 @@ class PipelineError(BaseModel):
     node: str
     kind: str                      # tool_argument | provider | transport | llm | schema
     tool: str | None = None
+    # Which logical queries this failure cost us. Two failed google_serp calls are
+    # indistinguishable without it. Empty when the args never validated, so there was
+    # no query to attribute it to.
+    query_keys: list[str] = Field(default_factory=list)
     classification: str | None = None
     status_code: int | None = None
     message: str

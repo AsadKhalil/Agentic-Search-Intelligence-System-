@@ -93,3 +93,58 @@ def test_serp_already_failed_is_not_retried_by_fallback(make_run):
     nodes = [e.node for e in state["node_events"]]
     assert "fallback_serp" not in nodes
     assert state["report_document"]["status"] == "partial"
+
+
+def test_failed_calls_say_which_query_they_cost(make_run):
+    """Two failed google_serp calls are indistinguishable without query attribution."""
+    state = make_run(backend=MockBackend(
+        domain_hint=DOMAIN,
+        fail_first_n={"google_serp": 99, "keyword_metrics": 99, "chatgpt_response": 99},
+    ))
+    provider_errors = [e for e in state["errors"] if e.kind == "provider"]
+    assert provider_errors
+    assert all(e.query_keys for e in provider_errors), "every failure names its queries"
+
+    serp_failures = [e for e in provider_errors if e.tool == "google_serp"]
+    assert len(serp_failures) == 2
+    assert serp_failures[0].query_keys != serp_failures[1].query_keys, (
+        "the two SERP failures must be distinguishable"
+    )
+    # every attributed key corresponds to a real planned query
+    planned = {p.query_key for p in state["planned_queries"]}
+    for error in provider_errors:
+        assert set(error.query_keys) <= planned
+
+
+def test_no_opportunity_ranking_when_nothing_was_measured(make_run):
+    """With every dependency down all rows tie on defaults; "largest" would be noise."""
+    state = make_run(backend=MockBackend(
+        domain_hint=DOMAIN,
+        fail_first_n={"google_serp": 99, "keyword_metrics": 99, "chatgpt_response": 99},
+    ))
+    document = state["report_document"]
+    scores = {q["opportunity_score"] for q in document["queries"]}
+
+    assert len(scores) == 1, "all failed rows score identically, so ranking is arbitrary"
+    assert "Largest opportunity" not in document["summary"]
+    assert "no opportunity ranking is meaningful" in document["summary"]
+
+
+def test_opportunity_ranking_survives_a_partial_run(make_run):
+    """Losing one tool must not suppress the ranking built from the others."""
+    state = make_run(backend=MockBackend(domain_hint=DOMAIN,
+                                         fail_first_n={"keyword_metrics": 99}))
+    assert "Largest opportunity" in state["report_document"]["summary"]
+
+
+def test_planner_measures_ai_overview(make_run):
+    """AI Overview presence is part of the brief, and the flag defaults to off."""
+    state = make_run()
+    serp_calls = [c for c in state["tool_calls"] if c.name == "google_serp"]
+    assert serp_calls
+    assert all(c.args.get("load_async_ai_overview") for c in serp_calls)
+    assert any(r.source == "ai_overview" for r in state["normalized"]), (
+        "an ai_overview record should reach normalization"
+    )
+    assert any(q["ai_overview_mentioned"] is not None
+               for q in state["report_document"]["queries"])

@@ -113,6 +113,8 @@ QUESTION: {question}
 Plan the DataForSEO calls needed to answer the question. Rules:
 - Call google_serp for each distinct search query whose organic ranking matters (at most 2).
 - Call keyword_metrics ONCE, passing every query you are investigating.
+- Set load_async_ai_overview to true on google_serp calls: whether the brand appears in
+  the AI Overview is part of what we are measuring, and it is off by default.
 - Call chatgpt_response ONCE for the single most important query.
 - Investigate at most {max_queries} distinct queries.
 - Keywords must be at most 80 characters and 10 words.
@@ -221,6 +223,7 @@ def retrieve(state: PipelineState, deps: Deps) -> dict[str, Any]:
         except ProviderError as exc:
             errors.append(PipelineError(
                 node="retrieve", kind="provider", tool=call.name,
+                query_keys=[query_key(t) for t in texts],
                 classification=exc.classification, status_code=exc.status_code,
                 message=exc.message, attempts=exc.attempts_made,
             ))
@@ -595,10 +598,17 @@ def report(state: PipelineState, deps: Deps) -> dict[str, Any]:
         f"Organic visibility: {len(visible)} visible, {len(invisible)} not visible, "
         f"{len(unknown)} unknown.",
     ]
-    if ranked:
-        top = ranked[0]
+    # A query whose retrieval failed still scores (0.295 on pure defaults), so with
+    # everything down every row ties and "largest" would be arbitrary sort order
+    # presented as a finding.
+    measured = [m for m in ranked if m.retrieval_status != "failed"]
+    if measured:
+        top = measured[0]
         lines.append(f"Largest opportunity: '{top.query_text}' at score "
                      f"{top.opportunity_score}.")
+    elif ranked:
+        lines.append("No query returned usable data, so the scores below are defaults "
+                     "and no opportunity ranking is meaningful.")
     if analysis and analysis.summary:
         lines.append(analysis.summary)
     if errors:

@@ -46,7 +46,12 @@ def run(label: str, fail_first_n: dict[str, int] | None = None) -> None:
         "path": metrics["node_sequence"],
         "api_calls": metrics["total_api_calls"],
         "retries": metrics["total_retries"],
-        "errors": [f"{e.tool or e.node}: {e.message}" for e in state["errors"]],
+        "llm_tokens": metrics["total_tokens"],
+        "errors": [
+            {"tool": e.tool or e.node, "queries": e.query_keys,
+             "attempts": e.attempts, "message": e.message}
+            for e in state["errors"]
+        ],
         "visibility": document["visibility"],
         "top_opportunity": document["queries"][0]["query_key"] if document["queries"] else None,
         "summary": document["summary"],

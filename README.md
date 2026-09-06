@@ -15,7 +15,7 @@ retries, degradation and both fallbacks — is reproducible offline.
 
 ```bash
 make install          # venv (python 3.12) + pinned deps
-make test             # 91 tests, offline, ~0.5s
+make test             # 95 tests, offline, ~0.5s
 make demo             # healthy run, retry-then-recover, total outage
 make run              # http://127.0.0.1:8000/docs
 make walkthrough      # drives the live API end to end (needs `make run` running)
