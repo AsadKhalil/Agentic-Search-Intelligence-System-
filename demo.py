@@ -13,7 +13,8 @@ Writes two artifacts:
   demo-output.json   every scenario's full report, metrics, planned calls and errors
   demo-logs.ndjson   the structured log stream, one JSON object per line
 
-Console output stays human-sized; the files carry the detail.
+Console output stays human-sized -- a plain walk-through of one search, then one
+summary per run. The structured logs go to the file; `--verbose` also streams them.
 """
 from __future__ import annotations
 
@@ -45,12 +46,23 @@ PROFILE = ProfileSnapshot(
 )
 QUESTION = "Are we visible for agile planning tools?"
 
+# fail_first_n is exact, not random: the tool fails its first N attempts and then
+# succeeds. Retries are budgeted at RETRY_MAX_ATTEMPTS (4 by default), so 2 recovers
+# inside the budget and 99 never can -- that is how run 3 reaches the give-up path
+# instead of merely being slow.
 SCENARIOS = [
-    ("1. healthy run", None),
-    ("2. SERP fails twice then recovers", {"google_serp": 2}),
-    ("3. every dependency down",
+    ("1. baseline - nothing broken", None),
+    ("2. simulated transient failure - Google results fail twice, then recover",
+     {"google_serp": 2}),
+    ("3. simulated total outage - every data source down for good",
      {"google_serp": 99, "keyword_metrics": 99, "chatgpt_response": 99}),
 ]
+
+TOOL_LABEL = {
+    "google_serp": "Google search results",
+    "keyword_metrics": "Search volume and difficulty",
+    "chatgpt_response": "ChatGPT's answer",
+}
 
 
 def run(label: str, fail_first_n: dict[str, int] | None) -> dict[str, Any]:
@@ -89,21 +101,63 @@ def run(label: str, fail_first_n: dict[str, int] | None) -> dict[str, Any]:
         "report": document,
     }
 
-    # Console gets the shape of the run; the file gets everything.
-    print(json.dumps({
-        "status": scenario["status"],
-        "degraded": scenario["degraded"],
-        "path": scenario["path"],
-        **scenario["totals"],
-        "errors": [
-            {"tool": e["tool"] or e["node"], "queries": e["query_keys"],
-             "attempts": e["attempts"], "message": e["message"]}
-            for e in scenario["errors"]
-        ],
-        "visibility": document["visibility"],
-        "summary": document["summary"],
-    }, indent=2))
+    # Console gets the shape of the run in words; the file carries every field.
+    totals, vis = scenario["totals"], document["visibility"]
+    print(f"  outcome     {document['status']}"
+          f"{' (degraded)' if document['degraded'] else ''}")
+    print(f"  steps       {' -> '.join(scenario['path'])}")
+    print(f"  cost        {totals['api_calls']} provider calls, "
+          f"{totals['retries']} retries, {totals['duration_ms']:.0f} ms")
+    print(f"  visibility  {vis['visible']} visible, {vis['not_visible']} not visible, "
+          f"{vis['unknown']} not measured")
+    if scenario["errors"]:
+        print(f"  errors      {len(scenario['errors'])} recorded "
+              f"-- injected by this scenario, and expected:")
+        for err in scenario["errors"]:
+            print(f"                {TOOL_LABEL.get(err['tool'], err['tool'])}: "
+                  f"{err['message']} "
+                  f"({err['attempts']} attempts, classified {err['classification']})")
     return scenario
+
+
+def simple_example(scenario: dict[str, Any]) -> None:
+    """One query walked end to end, before the failure scenarios add any noise.
+
+    Everything below already happened in run 1; this only re-reads it in plain words,
+    because three JSON blobs are not an introduction to anything.
+    """
+    report = scenario["report"]
+    row = (next((q for q in report["queries"] if q["domain_visible"] is True), None)
+           or next((q for q in report["queries"] if q["domain_visible"] is not None), None))
+    print("\n=== A simple example: one search from run 1, start to finish ===")
+    print(f'  We asked      "{QUESTION}"')
+    print(f"  About         {PROFILE.name} ({PROFILE.domain})")
+    print(f"  It planned    {len(scenario['planned_calls'])} provider calls covering "
+          f"{report['queries_analysed']} search phrases")
+    if row is None:
+        print("  (no query returned enough data to walk through)")
+        return
+
+    evidence = row.get("evidence") or {}
+    organic = evidence.get("organic") or {}
+    print(f'\n  Following just one of them: "{row["query_text"]}"')
+    seen = (f"{PROFILE.domain} found at position {row['visibility_position']}"
+            if row["domain_visible"] else f"{PROFILE.domain} not in the results")
+    print(f"    1. Google search results   -> {seen} "
+          f"of {organic.get('results_inspected', '?')} inspected")
+    print(f"    2. Search volume           -> {row['search_volume']:,} searches/month, "
+          f"difficulty {row['competitive_difficulty']:.0f}/100")
+    print(f"    3. ChatGPT's answer        -> {PROFILE.name} "
+          f"{'is' if row['chatgpt_mentioned'] else 'is not'} mentioned")
+    print(f"    => opportunity {row['opportunity_score']} "
+          f"(demand, difficulty and current visibility combined into one 0-1 number)")
+
+    rec = next((r for r in report["recommendations"]
+                if r["target_query_key"] == row["query_key"]), None)
+    if rec:
+        print(f"    => suggested action: {rec['title']} ({rec['content_type']})")
+    print("\n  The three runs below ask that same question again, with parts of the")
+    print("  system deliberately broken, to show what the answer looks like then.")
 
 
 def main() -> None:
@@ -119,9 +173,16 @@ def main() -> None:
                         help="HTML console built from the results; empty string to skip")
     parser.add_argument("--no-open", action="store_true",
                         help="write the report but do not open a browser")
+    parser.add_argument("--verbose", action="store_true",
+                        help="also stream the structured logs to the console")
     args = parser.parse_args()
 
     configure_logging(args.log_level, args.log_format)
+    if not args.verbose:
+        # 57 structured log lines on stdout bury the three paragraphs worth reading.
+        # They still reach the file below, which is where you would grep them anyway.
+        for handler in logging.getLogger().handlers:
+            handler.setLevel(logging.CRITICAL + 1)
     if args.log_file:
         Path(args.log_file).unlink(missing_ok=True)
         handler = logging.FileHandler(args.log_file)
@@ -155,8 +216,18 @@ def main() -> None:
                 "chatgpt_seconds": settings.chatgpt_timeout_seconds,
             },
         },
-        "scenarios": [run(label, fail) for label, fail in SCENARIOS],
+        "scenarios": [],
     }
+
+    print("=== What this demo does ===")
+    print("  Runs the whole pipeline three times against fixture data -- no network, no")
+    print("  API keys, no cost. Runs 2 and 3 break parts of it on purpose; the failures")
+    print("  they report are injected by the demo, not faults in the system.")
+
+    for index, (label, fail) in enumerate(SCENARIOS):
+        artifact["scenarios"].append(run(label, fail))
+        if index == 0:
+            simple_example(artifact["scenarios"][0])
 
     if args.out:
         Path(args.out).write_text(json.dumps(artifact, indent=2, default=str))

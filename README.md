@@ -249,11 +249,18 @@ failures are injected, which is what makes the comparison mean anything — a li
 would re-plan on each run and the timings would compare nothing. Real OpenAI is exercised
 through the API (`make run`), not the demo.
 
-**1. Healthy** — `plan_queries → retrieve → normalize → analyze → report`, 4 API calls,
-0 retries, `status: completed`.
+`fail_first_n` is the number of leading attempts a tool fails before succeeding, so it is
+read against `RETRY_MAX_ATTEMPTS` (4): **2** recovers inside the budget, **99** never can and
+drives the give-up path.
 
-**2. SERP fails twice, then recovers** — same path, 6 API calls, 2 retries, still
-`completed`. The retry is visible in the log and in the run's metrics:
+The console prints a plain walk-through of one search and one summary per run; the
+structured log stream goes to `demo-logs.ndjson` (`--verbose` also streams it to stdout).
+
+**1. Baseline, nothing broken** — `plan_queries → retrieve → normalize → analyze → report`,
+4 API calls, 0 retries, `status: completed`.
+
+**2. Simulated transient failure** — Google results fail twice, then recover. Same path,
+6 API calls, 2 retries, still `completed`. The retry is visible in the log and in the run's metrics:
 
 ```json
 {"event": "retry.scheduled", "tool": "google_serp", "attempt": 1, "of": 4,
