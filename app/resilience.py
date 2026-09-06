@@ -36,6 +36,8 @@ RETRYABLE_CODES = {
 # Everything else is terminal, explicitly including:
 #   20100 "Task Created."      queued-task code; invalid for the live endpoints we call
 #   40100 "You are not authorized to access this resource."
+#   40104 "Please verify your account before using the API." -- arrives as HTTP 403;
+#         permanent until the account is verified, so retrying is pure waste
 #   40200 "Payment Required."
 #   50100 "Not Implemented."   5xxxx but permanent -- retrying can never succeed
 

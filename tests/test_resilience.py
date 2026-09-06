@@ -128,3 +128,27 @@ def test_retries_exhausted_degrades_without_crashing(make_run):
     assert document["queries"] and all(q["retrieval_status"] == "failed"
                                        for q in document["queries"])
     assert document["summary"], "a report is produced even when nothing was retrieved"
+
+
+def test_http_error_body_reason_is_preserved():
+    """A non-2xx body carries the actionable reason; "HTTP 403" alone is undebuggable."""
+    from app.config import get_settings
+    from app.resilience import ProviderError
+    from app.tools.dataforseo import DataForSEOClient
+    from app.schemas import KeywordMetricsArgs
+
+    class Forbidden:
+        def post(self, path, body, timeout, tool):
+            return 403, {"status_code": 40104,
+                         "status_message": "Please verify your account before using the API.",
+                         "tasks": []}
+
+    settings = get_settings()
+    client = DataForSEOClient(settings, backend=Forbidden())
+    with pytest.raises(ProviderError) as caught:
+        client.execute("keyword_metrics", KeywordMetricsArgs(keywords=["crm"]))
+
+    assert caught.value.classification == "terminal"
+    assert "40104" in caught.value.message
+    assert "verify your account" in caught.value.message
+    assert caught.value.attempts_made == 1, "a terminal error must not be retried"

@@ -123,8 +123,15 @@ class DataForSEOClient:
 
             http_class = classify_http_status(status)
             if http_class != "success":
+                # The body of a non-2xx usually carries the actionable reason (e.g. 40104
+                # "Please verify your account"). Reporting only "HTTP 403" throws that away
+                # and leaves whoever is debugging with nothing to act on.
+                detail = ""
+                body_code, body_message = payload.get("status_code"), payload.get("status_message")
+                if body_code or body_message:
+                    detail = f" - {body_code}: {body_message}"
                 raise ProviderError(
-                    f"HTTP {status}", classification=http_class,
+                    f"HTTP {status}{detail}", classification=http_class,
                     status_code=status, tool=tool,
                 )
 
