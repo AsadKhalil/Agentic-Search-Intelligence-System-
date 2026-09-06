@@ -20,6 +20,7 @@ make demo             # healthy run, retry-then-recover, total outage
                       #   -> demo-output.json  full reports, metrics, errors
                       #   -> demo-logs.ndjson  the structured log stream
                       #   -> demo-report.html  visual console, opens in your browser
+                      #   --no-open writes the files without launching a browser
 make report           # rebuild the report from demo-output.json and open it
 make run              # http://127.0.0.1:8000/docs
 make walkthrough      # drives the live API end to end (needs `make run` running)
@@ -478,19 +479,5 @@ app/
   graph/  state.py  nodes.py  build.py
   tools/  dataforseo.py  mock.py  fixtures/*.json
 tests/    conftest.py + 6 test modules
-demo.py  Makefile  .env.example  requirements.txt  PLAN.md
+demo.py  report.py  walkthrough.py  Makefile  .env.example  requirements.txt
 ```
-
-## Further reading
-
-- **`make demo`** — the fastest way to see what the system does. It runs three
-  scenarios (healthy, a dependency that fails twice then recovers, and a total outage),
-  writes the raw results and the correlated log stream, then builds and opens an HTML
-  console: node timings on a log axis, retry budgets spent per tool, and the scored
-  queries. `--no-open` writes the files without launching a browser.
-- **[DIAGRAMS.md](DIAGRAMS.md)** — architecture, the DAG with every routing predicate,
-  sequence diagrams for the healthy / retry / LLM-failure / recheck flows, the ER model and
-  its join contract, and class diagrams for the runtime collaborators and the data types.
-  Written in two tiers: a plain-language overview, then the engineering detail.
-- **[PLAN.md](PLAN.md)** — the design document this was built from, kept for the reasoning
-  behind the decisions above.
